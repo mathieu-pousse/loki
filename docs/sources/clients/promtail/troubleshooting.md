@@ -16,7 +16,7 @@ In dry run mode, Promtail still support reading from a [positions](../configurat
 To start Promtail in dry run mode use the flag `--dry-run` as shown in the example below:
 
 ```bash
-cat my.log | promtail --stdin --dry-run --client.url http://127.0.0.1:3100/loki/api/v1/push
+cat my.log | promtail --stdin --dry-run --config.file promtail.yaml --client.url http://127.0.0.1:3100/loki/api/v1/push
 ```
 
 ## Inspecting pipeline stages
@@ -30,10 +30,41 @@ Each log entry contains four fields:
 
 Enable the inspection output using the `--inspect` command-line option. The `--inspect` option can be used in combination with `--stdin` and `--dry-run`.
 
-```bash
-cat my.log | promtail --stdin --dry-run --inspect --client.url http://127.0.0.1:3100/loki/api/v1/push
+For instance, with a `promtail.yaml` configuration file that parses the Nginx access logs: 
+
+```
+scrape_configs:
+  - job_name: nginx
+    pipeline_stages:
+    - match:
+        selector: '{filename="/var/log/nginx/access.log"}'
+        stages:
+        - regex:
+            expression: ^(?P<remote_addr>[\w\.]+) - (?P<remote_user>[^ ]*) \[(?P<time_local>.*)\]
+              "(?P<method>[^ ]*) (?P<request>[^ ]*) (?P<protocol>[^ ]*)" (?P<status>[\d]+)
+              (?P<request_time>[\d.]+) (?P<body_bytes_sent>[\d]+) "(?P<http_user_agent>[^"]*)"
+              "(?P<x_forwarded_for>[^"]*)" "(?P<upstream_addr>[^"]*)" "(?P<upstreams_response_time>[^"]*)"
+        - labels:
+            request_time: null
+            status: null
+        - timestamp:
+            format: 02/Jan/2006:15:04:05 -0700
+            source: time_local
+    static_configs:
+    - labels:
+        __path__: /var/log/nginx/*log
+        host: my-server
+        job: nginx
+      targets:
+      - localhost
 ```
 
+```bash
+cat /var/log/nginx/access.log | promtail --stdin --dry-run --inspect --config.file promtail.yaml --client.url http://127.0.0.1:3100/loki/api/v1/push
+```
+
+
+```
 ![screenshot](../inspect.png)
 
 The output uses color to highlight changes. Additions are in green, modifications in yellow, and removals in red.
@@ -49,19 +80,18 @@ Promtail supports piping data for sending logs to Loki (via the flag `--stdin`).
 Once you have Promtail installed you can for instance use the following command to send logs to a local Loki instance:
 
 ```bash
-cat my.log | promtail --stdin  --client.url http://127.0.0.1:3100/loki/api/v1/push
+cat my.log | promtail --stdin --config.file promtail.yaml --client.url http://127.0.0.1:3100/loki/api/v1/push
 ```
 
 You can also add additional labels from command line using:
 
 ```bash
-cat my.log | promtail --stdin  --client.url http://127.0.0.1:3100/loki/api/v1/push --client.external-labels=k1=v1,k2=v2
+cat my.log | promtail --stdin --config.file promtail.yaml --client.url http://127.0.0.1:3100/loki/api/v1/push --client.external-labels=k1=v1,k2=v2
 ```
 
 This will add labels `k1` and `k2` with respective values `v1` and `v2`.
 
-In pipe mode Promtail also support file configuration using `--config.file`, however do note that positions config is not used and
-only **the first scrape config is used**.
+In pipe mode Promtail requires a file configuration using `--config.file`, however do note that positions config is not used and only **the first scrape config is used**.
 
 [`static_configs:`](../configuration) can be used to provide static labels, although the targets property is ignored.
 
